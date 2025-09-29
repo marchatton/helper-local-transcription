@@ -1,0 +1,24 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.so
+*.dylib
+.build/
+
+# Virtual environments
+.venv/
+.env/
+
+# Whisper outputs
+*.json
+*.srt
+*.vtt
+*.txt
+*.tsv
+*.mp3
+*.wav
+
+# Temporary files
+*.tmp
+*.log
+.DS_Store
