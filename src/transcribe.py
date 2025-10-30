@@ -85,7 +85,9 @@ def ensure_dependency(name: str) -> None:
         sys.exit(f"Dependency '{name}' not found on PATH. Please install it and retry.")
 
 
-def normalize_audio(input_path: Path, sample_rate: int, channels: int, dest: Path) -> Path:
+def normalize_audio(
+    input_path: Path, sample_rate: int, channels: int, dest: Path
+) -> Path:
     normalized = dest / f"{input_path.stem}_normalized.wav"
     cmd = [
         "ffmpeg",
@@ -130,38 +132,51 @@ def run_whisper(
     subprocess.run(cmd, check=True)
 
 
-def main() -> None:
-    args = parse_args()
-
-    ensure_dependency("ffmpeg")
-    ensure_dependency("whisper")
-
-    input_path = args.input_path.expanduser().resolve()
+def transcribe_file(
+    *,
+    input_path: Path,
+    model: str,
+    model_dir: Path | None,
+    output_dir: Path,
+    output_format: str,
+    language: str | None,
+    task: str,
+    date_prefix: str,
+    sample_rate: int,
+    channels: int,
+    keep_intermediate: bool,
+) -> None:
+    input_path = input_path.expanduser().resolve()
     if not input_path.exists():
         sys.exit(f"Input file not found: {input_path}")
 
-    output_dir = (args.output_dir or input_path.parent).expanduser().resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
+    resolved_output_dir = output_dir.expanduser().resolve()
+    resolved_output_dir.mkdir(parents=True, exist_ok=True)
 
-    temp_dir = tempfile.TemporaryDirectory() if not args.keep_intermediate else None
-    work_dir = Path(temp_dir.name) if temp_dir else output_dir
+    model_dir = model_dir.expanduser().resolve() if model_dir else None
+
+    temp_dir: tempfile.TemporaryDirectory[str] | None = None
+    if not keep_intermediate:
+        temp_dir = tempfile.TemporaryDirectory()
+        work_dir = Path(temp_dir.name)
+    else:
+        work_dir = resolved_output_dir
 
     try:
-        wav_path = normalize_audio(input_path, args.sample_rate, args.channels, work_dir)
+        wav_path = normalize_audio(input_path, sample_rate, channels, work_dir)
         run_whisper(
             wav_path=wav_path,
-            model=args.model,
-            model_dir=args.model_dir,
-            output_dir=output_dir,
-            output_format=args.output_format,
-            language=args.language,
-            task=args.task,
+            model=model,
+            model_dir=model_dir,
+            output_dir=resolved_output_dir,
+            output_format=output_format,
+            language=language,
+            task=task,
         )
-        produced_file = output_dir / f"{wav_path.stem}.{args.output_format}"
-        target_name = f"{args.date_prefix}-{args.input_path.stem}.{args.output_format}"
-        target_file = output_dir / target_name
+        produced_file = resolved_output_dir / f"{wav_path.stem}.{output_format}"
+        target_name = f"{date_prefix}-{input_path.stem}.{output_format}"
+        target_file = resolved_output_dir / target_name
         if produced_file.exists():
-            target_file.parent.mkdir(parents=True, exist_ok=True)
             produced_file.replace(target_file)
             print(f"Transcription saved to: {target_file}")
         else:
@@ -169,13 +184,36 @@ def main() -> None:
                 f"Warning: Expected output not found: {produced_file}",
                 file=sys.stderr,
             )
-        if temp_dir is None:
+        if keep_intermediate:
             print(f"Normalized audio kept at: {wav_path}")
     except subprocess.CalledProcessError as err:
         sys.exit(f"Command failed with exit code {err.returncode}: {' '.join(err.cmd)}")
     finally:
         if temp_dir is not None:
             temp_dir.cleanup()
+
+
+def main() -> None:
+    args = parse_args()
+
+    ensure_dependency("ffmpeg")
+    ensure_dependency("whisper")
+
+    output_dir = args.output_dir or args.input_path.parent
+
+    transcribe_file(
+        input_path=args.input_path,
+        model=args.model,
+        model_dir=args.model_dir,
+        output_dir=output_dir,
+        output_format=args.output_format,
+        language=args.language,
+        task=args.task,
+        date_prefix=args.date_prefix,
+        sample_rate=args.sample_rate,
+        channels=args.channels,
+        keep_intermediate=args.keep_intermediate,
+    )
 
 
 if __name__ == "__main__":
